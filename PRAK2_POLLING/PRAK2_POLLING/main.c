@@ -1,216 +1,123 @@
+/*
+ * ARBK_P2_ZSM.c
+ *
+ * Created: 12.11.2023 13:21:55
+ * Author : jonat
+ */ 
 
 #include <avr/io.h>
 #define F_CPU 16000000
 #include <util/delay.h>
 
-/*
-Defining the states for the state-machine.
-Semantic meaning of the states:
-	=>	O == off
-	=>	B == blinking
-	=>	L == constantly on
-	
-letters are concatenated in the specified combinations.
-*/
+// DEFINE BUTTONS
+#define SWI1 (1 << PORTD2)
+#define SWI2 (1 << PORTD3)
+
+// DEFINE STATES
 #define OO 0
-#define BO 1
-#define LO 2
-#define OB 3
-#define OL 4
+#define OB 1
+#define OL 2
+#define BO 3
+#define LO 4
 
-/*
-Defining which bits correlate to which button
-*/
-#define SWI1 (1 << PORTD2) // 0b 0000 0100
-#define SWI2 (1 << PORTD3) // 0b 0000 1000
-
-
-/*
-Function to calculate the next state 
-according to the specifications
-*/
-uint8_t next_state(uint8_t current_state, uint8_t input)
+/************************************************************************/
+/* STATE MACHINE SECTION                                                */
+/************************************************************************/
+uint8_t next_state(uint8_t current_state, uint8_t button)
 {
 	/*
-	STATE MACHINE TABLE:
+	State machine
 	
-	STATE	|	SWI1	|	SWI2	|
-	---------------------------------
-	OO		|	BO		|	OB		|
-	BO		|	LO		|	OB		|
-	LO		|	BO		|	OB		|
-	OB		|	BO		|	OL		|
-	OL		|	BO		|	OB		|
-	
+	STATE	|	SWI1	|	SWI2
+	----------------------------
+	OO		|	BO		|	OB
+	OB		|	BO		|	OL
+	OL		|	BO		|	OB
+	BO		|	LO		|	OB
+	LO		|	BO		|	OB
 	*/
-	switch (current_state)
-	{
-		case OO:
+	if (button == SWI1)
+	{		
+		if (current_state == BO)
 		{
-			if (input == SWI1)
-			{
-				return BO;
-			}
-			
-			else
-			{
-				return OB;
-			}
+			return LO;
 		}
-		
-		case BO:
+			
+		return BO;
+	}
+	
+	else
+	{		
+		if (current_state == OB)
 		{
-			if (input == SWI1)
-			{
-				return LO;
-			}
-			
-			else 
-			{
-				return OB;
-			}
+			return OL;
 		}
-		
-		case LO:
-		{
-			if (input == SWI1)
-			{
-				return BO;
-			}
-			
-			else 
-			{
-				return OB;
-			}
-		}
-		
-		case OB:
-		{
-			if (input == SWI2)
-			{
-				return OL;
-			}
-			
-			else 
-			{
-				return BO;
-			}
-		}
-		
-		case OL:
-		{
-			if (input == SWI2)
-			{
-				return OB;
-			}
-			
-			else
-			{
-				return BO;
-			}
-		}
+		return OB;
 	}
 	
 	return 0;
 }
 
-
-/*
-LEDs get turned on or off, according to the current state
-*/
 void led_controller(uint8_t current_state)
 {
 	switch (current_state)
 	{
-		// Idle State, both LEDs are off
-		case OO:
-		{
-			PORTB &= ~(1 << PORTB0) & ~(1 << PORTB1);
-			break;
-		}
-		
-		/*
-		In the following cases, the descriptive state name
-		gets implemented: For B the corresponding bit gets flipped,
-		for L it gets activated and for O it gets turned off.
-		*/
-		case BO:
-		{
-			PORTB &= ~(1 << PORTB0);
-			PORTB ^= (1 << PORTB1);
-			break;
-		}
-		
-		case LO:
-		{
-			PORTB &= ~(1 << PORTB0);
-			PORTB |= (1 << PORTB1);
-			break;
-			
-		}
+		case OO: 
+			PORTB &= ~(1 << PORTB0) & ~(1 << PORTB1); // FEHLER
+		break;
 		
 		case OB:
-		{
-			PORTB &= ~(1 << PORTB1);
-			PORTB ^= (1 << PORTB0);
-			break;
-		}
+			PORTB &= ~(1 << PORTB0); 
+			PORTB ^= (1 << PORTB1);
+		break;
 		
 		case OL:
-		{
+			PORTB &= ~(1 << PORTB0);
+			PORTB |= (1 << PORTB1);
+		break;
+		
+		case BO:
+			PORTB &= ~(1 << PORTB1);
+			PORTB ^= (1 << PORTB0);
+		break;
+		
+		case LO:
 			PORTB &= ~(1 << PORTB1);
 			PORTB |= (1 << PORTB0);
-			break;
-		}
+		break;
 	}
+	
 	_delay_ms(200);
 }
 
 
+
+
 int main(void)
 {
-	DDRD = ~(1 << PORTD2) & ~(1 << PORTD3);	// SET INPUT PINS
-	DDRB = (1 << PORTB0) | (1 << PORTB1);	// SET OUTPUT LEDs
+	DDRD = ~(1 << PORTD2) & ~(1 << PORTD3);
+	PORTD = (1 << PORTD2) | (1 << PORTD3);
+	DDRB |= (1 << PORTB0) | (1 << PORTB1);
 	
-	PORTD |= (1 << PORTD2) | (1 << PORTD3);	// ENABLE PULL-UP RESISTORS
-	
-	
-	
-	// Idle state initialization	
 	uint8_t current_state = OO;
+	uint8_t prev_button_state = 0;
 	
-	
-	/*
-	initial button state
-	*/
-	uint8_t previous_button_state = 0;
-	
-
+    /* Replace with your application code */
     while (1) 
     {
-		/*
-		Getting inputs from register D and clearing any non PD2 and PD3 bits
-		to ensure correct comparison between input and logic
-		*/
-		uint8_t button_states = PIND & ((1 << PORTD2) | (1 << PORTD3));
-		
-		/*
-		Polling for change in inputs
-		*/
-		if (button_states != previous_button_state)
+		uint8_t current_button_state = PIND & ((1 << PORTD2) | (1 << PORTD3)); // FEHLER
+		if (current_button_state != prev_button_state)
 		{
-			/*
-			Only change state if PD2 or PD3 bit is set 0
-			(Buttons are low active)
-			*/
-			if (button_states != ((1 << PORTD2) | (1 << PORTD3)))
+			if (current_button_state != ((1 << PORTD2) | (1 << PORTD3)))
 			{
-				current_state = next_state(current_state, button_states);
+				current_state = next_state(current_state, current_button_state);
 			}
 			
-			previous_button_state = button_states;
+			
+			prev_button_state = current_button_state;
 		}
+		
 		led_controller(current_state);
-	}
+    }
 }
 
